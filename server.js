@@ -54,7 +54,7 @@ async function initMongoDB() {
 }
 
 // Middleware
-app.use(cors());
+
 app.use(express.json());
 
 // Create HTTP server
