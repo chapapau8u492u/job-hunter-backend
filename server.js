@@ -19,6 +19,9 @@ const client = new MongoClient(uri, {
   }
 });
 
+// Allow requests from *any* origin
+app.use(cors());
+
 let db;
 let applicationsCollection;
 
