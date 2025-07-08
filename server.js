@@ -19,7 +19,8 @@ const client = new MongoClient(uri, {
   }
 });
 
-// Allow requests from *any* origin
+// Allow requests from specific origin
+const allowedOrigins = ["https://job-traccker.vercel.app"];
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
