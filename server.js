@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 // MongoDB connection
 let db;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://jobhunter:jobhunter123@cluster0.nujsn.mongodb.net/jobhunter?retryWrites=true&w=majority';
+const MONGODB_URI ='mongodb+srv://chapapau8u492u:chapapau8u492u@job-hunter.nh5pqhk.mongodb.net/?retryWrites=true&w=majority&appName=Job-Hunter';
 
 MongoClient.connect(MONGODB_URI)
   .then(client => {
