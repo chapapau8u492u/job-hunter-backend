@@ -8,90 +8,166 @@ const PORT = process.env.PORT || 3000;
 
 // MongoDB connection
 let db;
+let mongoClient;
 const MONGODB_URI ='mongodb+srv://chapapau8u492u:chapapau8u492u@job-hunter.nh5pqhk.mongodb.net/?retryWrites=true&w=majority&appName=Job-Hunter';
 
-MongoClient.connect(MONGODB_URI)
-  .then(client => {
-    console.log('Connected to MongoDB');
-    db = client.db('jobhunter');
-  })
-  .catch(error => console.error('MongoDB connection error:', error));
+// Enhanced MongoDB connection with retry logic
+async function connectToMongoDB() {
+  try {
+    console.log('Attempting to connect to MongoDB...');
+    mongoClient = new MongoClient(MONGODB_URI, {
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+    
+    await mongoClient.connect();
+    console.log('Connected to MongoDB successfully');
+    db = mongoClient.db('jobhunter');
+    
+    // Test the connection
+    await db.admin().ping();
+    console.log('MongoDB ping successful');
+    
+    return true;
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    db = null;
+    return false;
+  }
+}
+
+// Initialize connection
+connectToMongoDB();
 
 // Enhanced CORS configuration
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://1184ee33-d0e8-423e-944b-df4cd74b576b.lovableproject.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://preview--application-ace-platform.lovable.app',
+    /\.lovableproject\.com$/,
+    /\.lovable\.app$/
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
+  credentials: true
+}));
 
 app.use(express.json({ limit: '10mb' }));
 
 // Add preflight handling
 app.options('*', cors());
 
+// Middleware to ensure database connection
+async function ensureDBConnection(req, res, next) {
+  if (!db) {
+    console.log('Database not connected, attempting to reconnect...');
+    const connected = await connectToMongoDB();
+    if (!connected) {
+      return res.status(500).json({ 
+        error: 'Database connection failed', 
+        message: 'Unable to connect to MongoDB. Please try again later.' 
+      });
+    }
+  }
+  next();
+}
+
 // Routes
 
 // Get all resumes
-app.get('/api/resumes', async (req, res) => {
+app.get('/api/resumes', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
-    const resumes = await db.collection('resumes').find({}).toArray();
-    console.log('Fetched resumes from DB:', resumes.length);
+    const { userId } = req.query;
     
-    // Transform resumes to include proper title
+    let query = {};
+    if (userId) {
+      query.userId = userId;
+    }
+    
+    const resumes = await db.collection('resumes').find(query).toArray();
+    console.log(`Fetched ${resumes.length} resumes from DB`);
+    
+    // Transform resumes to include proper title and id
     const transformedResumes = resumes.map(resume => ({
+      ...resume,
       id: resume._id.toString(),
       title: resume.title || `${resume.personalInfo?.firstName || 'Untitled'} ${resume.personalInfo?.lastName || ''} Resume`.trim(),
-      ...resume
+      _id: undefined
     }));
     
     res.json({ resumes: transformedResumes });
   } catch (error) {
     console.error('Error fetching resumes:', error);
-    res.status(500).json({ error: 'Failed to fetch resumes' });
+    res.status(500).json({ error: 'Failed to fetch resumes', details: error.message });
   }
 });
 
 // Create a new resume
-app.post('/api/resumes', async (req, res) => {
+app.post('/api/resumes', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
+    console.log('Creating new resume with data:', JSON.stringify(req.body, null, 2));
+    
     const resume = {
       ...req.body,
       createdAt: new Date(),
       updatedAt: new Date()
     };
 
+    // Validate required fields
+    if (!resume.personalInfo || (!resume.personalInfo.firstName && !resume.title)) {
+      return res.status(400).json({ 
+        error: 'Missing required fields', 
+        message: 'Resume must have either a title or personal info with firstName' 
+      });
+    }
+
     const result = await db.collection('resumes').insertOne(resume);
     const createdResume = await db.collection('resumes').findOne({ _id: result.insertedId });
     
+    console.log('Resume created successfully with ID:', result.insertedId.toString());
+    
+    const responseResume = {
+      ...createdResume,
+      id: createdResume._id.toString(),
+      _id: undefined
+    };
+    
     res.status(201).json({
-      data: {
-        id: createdResume._id.toString(),
-        ...createdResume,
-        _id: undefined
-      }
+      success: true,
+      data: responseResume,
+      message: 'Resume created successfully'
     });
   } catch (error) {
     console.error('Error creating resume:', error);
-    res.status(500).json({ error: 'Failed to create resume' });
+    res.status(500).json({ 
+      error: 'Failed to create resume', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
 // Update a resume
-app.put('/api/resumes/:id', async (req, res) => {
+app.put('/api/resumes/:id', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
     const { id } = req.params;
+    console.log(`Updating resume with ID: ${id}`);
+    
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid resume ID format' });
+    }
+    
     const updateData = {
       ...req.body,
       updatedAt: new Date()
     };
+    
+    // Remove the id field from updateData to avoid conflicts
+    delete updateData.id;
 
     const result = await db.collection('resumes').updateOne(
       { _id: new ObjectId(id) },
@@ -104,62 +180,83 @@ app.put('/api/resumes/:id', async (req, res) => {
 
     const updatedResume = await db.collection('resumes').findOne({ _id: new ObjectId(id) });
     
+    console.log('Resume updated successfully');
+    
+    const responseResume = {
+      ...updatedResume,
+      id: updatedResume._id.toString(),
+      _id: undefined
+    };
+    
     res.json({
-      data: {
-        id: updatedResume._id.toString(),
-        ...updatedResume,
-        _id: undefined
-      }
+      success: true,
+      data: responseResume,
+      message: 'Resume updated successfully'
     });
   } catch (error) {
     console.error('Error updating resume:', error);
-    res.status(500).json({ error: 'Failed to update resume' });
+    res.status(500).json({ 
+      error: 'Failed to update resume', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
 // Delete a resume
-app.delete('/api/resumes/:id', async (req, res) => {
+app.delete('/api/resumes/:id', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
     const { id } = req.params;
+    
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid resume ID format' });
+    }
+    
     const result = await db.collection('resumes').deleteOne({ _id: new ObjectId(id) });
 
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Resume not found' });
     }
 
-    res.json({ message: 'Resume deleted successfully' });
+    console.log('Resume deleted successfully');
+    res.json({ 
+      success: true, 
+      message: 'Resume deleted successfully' 
+    });
   } catch (error) {
     console.error('Error deleting resume:', error);
-    res.status(500).json({ error: 'Failed to delete resume' });
+    res.status(500).json({ 
+      error: 'Failed to delete resume', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
 // Get all applications
-app.get('/api/applications', async (req, res) => {
+app.get('/api/applications', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
     const applications = await db.collection('applications').find({}).toArray();
-    res.json({ applications });
+    console.log(`Fetched ${applications.length} applications from DB`);
+    
+    const transformedApplications = applications.map(app => ({
+      ...app,
+      id: app._id.toString(),
+      _id: undefined
+    }));
+    
+    res.json({ applications: transformedApplications });
   } catch (error) {
     console.error('Error fetching applications:', error);
-    res.status(500).json({ error: 'Failed to fetch applications' });
+    res.status(500).json({ error: 'Failed to fetch applications', details: error.message });
   }
 });
 
 // Create a new application
-app.post('/api/applications', async (req, res) => {
+app.post('/api/applications', ensureDBConnection, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
+    console.log('Creating new application:', JSON.stringify(req.body, null, 2));
+    
     const application = {
       ...req.body,
       createdAt: new Date(),
@@ -169,23 +266,31 @@ app.post('/api/applications', async (req, res) => {
     const result = await db.collection('applications').insertOne(application);
     const createdApplication = await db.collection('applications').findOne({ _id: result.insertedId });
     
-    console.log('Application saved to MongoDB:', createdApplication);
+    console.log('Application created successfully with ID:', result.insertedId.toString());
+    
+    const responseApplication = {
+      ...createdApplication,
+      id: createdApplication._id.toString(),
+      _id: undefined
+    };
     
     res.status(201).json({
-      data: {
-        id: createdApplication._id.toString(),
-        ...createdApplication,
-        _id: undefined
-      }
+      success: true,
+      data: responseApplication,
+      message: 'Application created successfully'
     });
   } catch (error) {
     console.error('Error creating application:', error);
-    res.status(500).json({ error: 'Failed to create application' });
+    res.status(500).json({ 
+      error: 'Failed to create application', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
 // Generate cover letter with enhanced AI-like generation
-app.post('/api/generate-cover-letter', async (req, res) => {
+app.post('/api/generate-cover-letter', ensureDBConnection, async (req, res) => {
   try {
     const { company, position, description, location, salary, resumeId } = req.body;
     
@@ -197,13 +302,16 @@ app.post('/api/generate-cover-letter', async (req, res) => {
 
     // Get resume data from database
     let resumeData = null;
-    if (db) {
-      try {
+    try {
+      if (ObjectId.isValid(resumeId)) {
         resumeData = await db.collection('resumes').findOne({ _id: new ObjectId(resumeId) });
-        console.log('Resume data found:', resumeData ? 'Yes' : 'No');
-      } catch (error) {
-        console.log('Could not fetch resume from DB:', error.message);
+      } else {
+        // Try to find by string ID
+        resumeData = await db.collection('resumes').findOne({ id: resumeId });
       }
+      console.log('Resume data found:', resumeData ? 'Yes' : 'No');
+    } catch (error) {
+      console.log('Could not fetch resume from DB:', error.message);
     }
 
     // Generate personalized cover letter
@@ -216,10 +324,18 @@ app.post('/api/generate-cover-letter', async (req, res) => {
       resumeData
     });
     
-    res.json({ coverLetter });
+    res.json({ 
+      success: true,
+      coverLetter,
+      message: 'Cover letter generated successfully'
+    });
   } catch (error) {
     console.error('Error generating cover letter:', error);
-    res.status(500).json({ error: 'Failed to generate cover letter' });
+    res.status(500).json({ 
+      error: 'Failed to generate cover letter', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
@@ -320,9 +436,25 @@ ${candidatePhone}`;
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    database: db ? 'Connected' : 'Disconnected'
+  });
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully...');
+  if (mongoClient) {
+    await mongoClient.close();
+    console.log('MongoDB connection closed');
+  }
+  process.exit(0);
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+module.exports = app;
