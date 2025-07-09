@@ -18,20 +18,7 @@ MongoClient.connect(MONGODB_URI)
   .catch(error => console.error('MongoDB connection error:', error));
 
 // Enhanced CORS configuration
-app.use(cors({
-  origin: [
-    'https://1184ee33-d0e8-423e-944b-df4cd74b576b.lovableproject.com',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://preview--application-ace-platform.lovable.app',
-    /\.lovableproject\.com$/,
-    /\.lovable\.app$/
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
-  credentials: true
-}));
+app.use(cors());
 
 app.use(express.json({ limit: '10mb' }));
 
