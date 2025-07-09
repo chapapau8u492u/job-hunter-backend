@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const WebSocket = require('ws');
@@ -18,20 +17,6 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
-
-// Allow requests from specific origin
-const allowedOrigins = ["https://job-traccker.vercel.app", "https://lovable.dev"];
-// app.use(cors({
-//   origin: function(origin, callback) {
-//     if (!origin || allowedOrigins.includes(origin)) {
-//       callback(null, true);
-//     } else {
-//       callback(new Error("Not allowed by CORS"));
-//     }
-//   }
-// }));
-
-app.use(cors())
 
 let db;
 let applicationsCollection;
@@ -56,7 +41,7 @@ async function initMongoDB() {
 }
 
 // Middleware
-
+app.use(cors());
 app.use(express.json());
 
 // Create HTTP server
@@ -346,6 +331,32 @@ app.delete('/api/applications/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error'
+    });
+  }
+});
+
+// Get resumes for applications
+app.get('/api/resumes', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    let query = {};
+    if (userId) {
+      query.userId = userId;
+    }
+    
+    const resumesCollection = db.collection('resumes');
+    const resumes = await resumesCollection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    res.json({ success: true, resumes });
+  } catch (error) {
+    console.error('Error fetching resumes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch resumes'
     });
   }
 });
