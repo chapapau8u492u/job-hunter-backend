@@ -354,7 +354,7 @@ EXAMPLE QUALITY LEVEL:
 • Developed scalable microservices architecture serving 50,000+ concurrent users with 99.9% uptime
 • Collaborated with C-suite executives to align technical roadmap, driving 25% increase in market share
 
-FORMAT: Return only bullet points with • symbol, no additional text`;
+FORMAT: Return only bullet points with •• (2 times) symbol, no additional text`;
 
     try {
       const generatedDescription = await callGeminiAPI(prompt);
