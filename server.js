@@ -883,13 +883,29 @@ ${candidatePhone}`;
 }
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    database: db ? 'Connected' : 'Disconnected'
-  });
+app.get('/api/health', ensureDBConnection, async (req, res) => {
+  try {
+    const collections = await req.db.listCollections().toArray();
+    const collectionNames = collections.map(col => col.name);
+    console.log('Available collections:', collectionNames);
+
+    res.json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      database: 'Connected',
+      collections: collectionNames
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({ 
+      status: 'ERROR',
+      timestamp: new Date().toISOString(),
+      database: 'Disconnected',
+      error: error.message
+    });
+  }
 });
+
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
