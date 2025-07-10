@@ -77,8 +77,11 @@ async function ensureDBConnection(req, res, next) {
       });
     }
   }
+
+  req.db = db; // ✅ Attach db instance to the request
   next();
 }
+
 
 // Helper function to call Gemini API
 async function callGeminiAPI(prompt) {
@@ -469,7 +472,7 @@ app.get('/api/resumes', ensureDBConnection, async (req, res) => {
 app.post('/api/resumes', ensureDBConnection, async (req, res) => {
   try {
     console.log('Creating new resume with data:', JSON.stringify(req.body, null, 2));
-    
+
     const resume = {
       ...req.body,
       createdAt: new Date(),
@@ -477,24 +480,29 @@ app.post('/api/resumes', ensureDBConnection, async (req, res) => {
     };
 
     // Validate required fields
-    if (!resume.personalInfo || (!resume.personalInfo.firstName && !resume.personalInfo.fullName && !resume.title)) {
-      return res.status(400).json({ 
-        error: 'Missing required fields', 
-        message: 'Resume must have either a title or personal info with name' 
+    if (
+      !resume.personalInfo ||
+      (!resume.personalInfo.firstName && !resume.personalInfo.fullName && !resume.title)
+    ) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Resume must have either a title or personal info with name',
+        success: false
       });
     }
 
-    const result = await db.collection('resumes').insertOne(resume);
-    const createdResume = await db.collection('resumes').findOne({ _id: result.insertedId });
-    
+    // ✅ Use req.db instead of global db
+    const result = await req.db.collection('resumes').insertOne(resume);
+    const createdResume = await req.db.collection('resumes').findOne({ _id: result.insertedId });
+
     console.log('Resume created successfully with ID:', result.insertedId.toString());
-    
+
     const responseResume = {
       ...createdResume,
-      id: createdResume._id.toString(),
-      _id: undefined
+      id: createdResume._id.toString()
     };
-    
+    delete responseResume._id;
+
     res.status(201).json({
       success: true,
       data: responseResume,
@@ -502,13 +510,14 @@ app.post('/api/resumes', ensureDBConnection, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating resume:', error);
-    res.status(500).json({ 
-      error: 'Failed to create resume', 
+    res.status(500).json({
+      error: 'Failed to create resume',
       details: error.message,
-      success: false 
+      success: false
     });
   }
 });
+
 
 // Update a resume
 app.put('/api/resumes/:id', ensureDBConnection, async (req, res) => {
