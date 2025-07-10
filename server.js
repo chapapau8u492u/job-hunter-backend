@@ -9,7 +9,11 @@ const PORT = process.env.PORT || 3000;
 // MongoDB connection
 let db;
 let mongoClient;
-const MONGODB_URI ='mongodb+srv://chapapau8u492u:chapapau8u492u@job-hunter.nh5pqhk.mongodb.net/?retryWrites=true&w=majority&appName=Job-Hunter';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chapapau8u492u:chapapau8u492u@cluster0studentos.23ubx9r.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0StudentOS';
+
+// Gemini API configuration
+const GEMINI_API_KEY = 'AIzaSyBmE7h85j2gCHUuqtkofhZcjtRYwN-8O78';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 // Enhanced MongoDB connection with retry logic
 async function connectToMongoDB() {
@@ -23,7 +27,7 @@ async function connectToMongoDB() {
     
     await mongoClient.connect();
     console.log('Connected to MongoDB successfully');
-    db = mongoClient.db('jobhunter');
+    db = mongoClient.db('studentos');
     
     // Test the connection
     await db.admin().ping();
@@ -41,7 +45,20 @@ async function connectToMongoDB() {
 connectToMongoDB();
 
 // Enhanced CORS configuration
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://e696d393-e4c6-4336-8245-a06a9e89584f.lovableproject.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://preview--application-ace-platform.lovable.app',
+    /\.lovableproject\.com$/,
+    /\.lovable\.app$/
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
+  credentials: true
+}));
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -63,7 +80,362 @@ async function ensureDBConnection(req, res, next) {
   next();
 }
 
-// Routes
+// Helper function to call Gemini API
+async function callGeminiAPI(prompt) {
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.candidates && data.candidates[0].content.parts[0].text) {
+      return data.candidates[0].content.parts[0].text.trim();
+    } else {
+      throw new Error('Invalid response from Gemini API');
+    }
+  } catch (error) {
+    console.error('Gemini API call failed:', error);
+    throw error;
+  }
+}
+
+// Helper function to validate and convert ID
+function processResumeId(id) {
+  console.log('Processing resume ID:', id, 'Type:', typeof id);
+  
+  if (!id) {
+    return { isObjectId: false, id: id, stringId: id };
+  }
+  
+  const stringId = String(id);
+  
+  if (ObjectId.isValid(stringId) && stringId.length === 24 && /^[0-9a-fA-F]{24}$/.test(stringId)) {
+    console.log('ID is valid ObjectId format');
+    return { isObjectId: true, id: new ObjectId(stringId), stringId: stringId };
+  }
+  
+  console.log('ID treated as string format');
+  return { isObjectId: false, id: stringId, stringId: stringId };
+}
+
+// AI Resume Generation endpoint
+app.post('/api/ai/generate-resume', ensureDBConnection, async (req, res) => {
+  try {
+    const { summary, resumeName } = req.body;
+    
+    if (!summary || !resumeName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: summary and resumeName'
+      });
+    }
+
+    const prompt = `You are an expert ATS-optimized resume builder and career consultant. Create a comprehensive, professional resume based on this information:
+
+CANDIDATE SUMMARY: "${summary}"
+RESUME NAME: "${resumeName}"
+
+INSTRUCTIONS:
+- Create a modern, ATS-friendly resume that will pass automated screening systems
+- Use action verbs, quantifiable achievements, and industry-relevant keywords
+- Ensure all sections are professionally written and error-free
+- Make the content compelling and competitive for today's job market
+- Extract or intelligently generate realistic professional information
+
+REQUIRED OUTPUT FORMAT (JSON):
+{
+  "personalInfo": {
+    "fullName": "extracted or professionally generated name",
+    "email": "professional.email@domain.com",
+    "phone": "+1 (555) 123-4567",
+    "location": "City, State",
+    "summary": "compelling 3-4 line professional summary with quantifiable achievements"
+  },
+  "experiences": [
+    {
+      "id": "1",
+      "jobTitle": "relevant senior position title",
+      "company": "Credible Company Name",
+      "location": "City, State",
+      "startDate": "2022-01",
+      "endDate": "",
+      "current": true,
+      "description": "• Led cross-functional team of 8+ members, resulting in 25% improvement in project delivery\\n• Implemented scalable solutions that reduced processing time by 40% and increased efficiency\\n• Managed $500K+ budget while maintaining 98% client satisfaction rate\\n• Collaborated with C-suite executives to align technical strategy with business objectives"
+    },
+    {
+      "id": "2",
+      "jobTitle": "relevant mid-level position",
+      "company": "Previous Company Name",
+      "location": "City, State",
+      "startDate": "2020-03",
+      "endDate": "2021-12",
+      "current": false,
+      "description": "• Developed and maintained enterprise-level applications serving 10,000+ users\\n• Optimized database performance, achieving 30% faster query response times\\n• Mentored 3 junior developers, contributing to team productivity increase of 20%\\n• Spearheaded adoption of new technologies, reducing development cycle by 15%"
+    }
+  ],
+  "education": [
+    {
+      "id": "1",
+      "degree": "relevant Bachelor's or Master's degree",
+      "school": "Reputable University Name",
+      "location": "City, State",
+      "graduationDate": "2020-05",
+      "gpa": "3.7"
+    }
+  ],
+  "skills": [
+    {"id": "1", "name": "highly relevant technical skill", "level": "advanced"},
+    {"id": "2", "name": "industry-standard tool", "level": "intermediate"},
+    {"id": "3", "name": "complementary skill", "level": "intermediate"},
+    {"id": "4", "name": "additional relevant skill", "level": "intermediate"},
+    {"id": "5", "name": "soft skill", "level": "advanced"},
+    {"id": "6", "name": "certification or methodology", "level": "intermediate"}
+  ]
+}
+
+CRITICAL REQUIREMENTS:
+- All achievements must include specific metrics and numbers
+- Use industry-standard job titles and company types
+- Ensure descriptions are ATS-optimized with relevant keywords
+- Professional email format: firstname.lastname@domain.com
+- Skills should match the resume name and industry focus
+- Experience should show career progression and growth
+- Return ONLY valid JSON, no additional text`;
+
+    try {
+      const generatedContent = await callGeminiAPI(prompt);
+      
+      // Try to parse JSON from response
+      const jsonMatch = generatedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const resumeData = JSON.parse(jsonMatch[0]);
+        res.json({
+          success: true,
+          resume: resumeData
+        });
+      } else {
+        throw new Error('No JSON found in AI response');
+      }
+    } catch (parseError) {
+      console.error('AI parsing error:', parseError);
+      // Fallback structured response
+      res.json({
+        success: true,
+        resume: createFallbackResume(summary, resumeName)
+      });
+    }
+  } catch (error) {
+    console.error('AI resume generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate resume with AI',
+      details: error.message
+    });
+  }
+});
+
+// AI Summary Generation endpoint
+app.post('/api/ai/generate-summary', ensureDBConnection, async (req, res) => {
+  try {
+    const { fullName, jobTitle, experience, skills } = req.body;
+    
+    if (!fullName || !jobTitle) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: fullName and jobTitle'
+      });
+    }
+
+    const prompt = `You are a professional resume writer and career consultant specializing in creating compelling professional summaries.
+
+CREATE A PROFESSIONAL SUMMARY FOR:
+- Name: ${fullName}
+- Target Role: ${jobTitle}
+- Experience Level: ${experience || 'Not specified'}
+- Key Skills: ${skills || 'Not specified'}
+
+REQUIREMENTS:
+- Write 3-4 impactful bullet points that immediately grab attention
+- Each bullet should be 15-25 words maximum
+- Include quantifiable achievements where possible
+- Use powerful action words and industry keywords
+- Focus on value proposition and unique strengths
+- Make it ATS-optimized and recruiter-friendly
+- Avoid generic phrases and clichés
+
+FORMAT: Return bullet points with • symbol, no additional text
+
+EXAMPLE QUALITY:
+• Results-driven ${jobTitle} with 5+ years expertise in [key area], delivering 30% improvement in [metric]
+• Proven track record of leading cross-functional teams and managing $500K+ budgets with 98% success rate
+• Technical expert in [specific skills] with demonstrated ability to scale solutions for 10,000+ users
+• Strategic problem-solver who reduced operational costs by 25% while increasing team productivity by 40%`;
+
+    try {
+      const generatedSummary = await callGeminiAPI(prompt);
+      res.json({
+        success: true,
+        summary: generatedSummary
+      });
+    } catch (error) {
+      // Fallback summary
+      const fallbackSummary = `• Experienced ${jobTitle} with strong background in ${skills || 'relevant technologies'} and proven results\n• Demonstrated expertise in leading projects and collaborating with cross-functional teams\n• Committed to delivering high-quality solutions that drive business growth and efficiency\n• Passionate about continuous learning and staying current with industry best practices`;
+      
+      res.json({
+        success: true,
+        summary: fallbackSummary
+      });
+    }
+  } catch (error) {
+    console.error('AI summary generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate summary with AI',
+      details: error.message
+    });
+  }
+});
+
+// AI Experience Description endpoint
+app.post('/api/ai/generate-experience', ensureDBConnection, async (req, res) => {
+  try {
+    const { jobTitle, company, duration, responsibilities } = req.body;
+    
+    if (!jobTitle || !company) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: jobTitle and company'
+      });
+    }
+
+    const prompt = `You are an expert resume writer specializing in creating compelling work experience descriptions that pass ATS systems and impress hiring managers.
+
+CREATE PROFESSIONAL BULLET POINTS FOR:
+- Position: ${jobTitle}
+- Company: ${company}
+- Duration: ${duration || 'Not specified'}
+- Key Responsibilities: ${responsibilities || 'Not specified'}
+
+EXPERT REQUIREMENTS:
+- Write 4-5 powerful bullet points that showcase impact and achievements
+- Start each bullet with strong action verbs (Led, Implemented, Optimized, Managed, Developed, etc.)
+- Include specific metrics and quantifiable results (percentages, dollar amounts, timeframes, team sizes)
+- Use industry-relevant keywords for ATS optimization
+- Focus on accomplishments, not just duties
+- Each bullet should be 20-30 words for optimal readability
+- Show career progression and increasing responsibility
+
+STRUCTURE EACH BULLET:
+Action Verb + What you did + How you did it + Quantifiable result/impact
+
+EXAMPLE QUALITY LEVEL:
+• Led cross-functional team of 12 developers, resulting in 40% faster product delivery and $2M cost savings
+• Implemented automated testing framework that reduced bug reports by 60% and improved code quality scores
+• Managed $800K annual budget while maintaining 99% client satisfaction and exceeding revenue targets by 15%
+• Developed scalable microservices architecture serving 50,000+ concurrent users with 99.9% uptime
+• Collaborated with C-suite executives to align technical roadmap, driving 25% increase in market share
+
+FORMAT: Return only bullet points with • symbol, no additional text`;
+
+    try {
+      const generatedDescription = await callGeminiAPI(prompt);
+      res.json({
+        success: true,
+        description: generatedDescription
+      });
+    } catch (error) {
+      // Fallback description
+      const fallbackDescription = `• Led key initiatives and projects in ${jobTitle} role at ${company} with measurable impact\n• Collaborated with cross-functional teams to deliver high-quality solutions on time and within budget\n• Implemented best practices and process improvements that increased efficiency by 20%\n• Managed stakeholder relationships and communicated technical concepts to non-technical audiences\n• Contributed to team growth and mentored junior colleagues in professional development`;
+      
+      res.json({
+        success: true,
+        description: fallbackDescription
+      });
+    }
+  } catch (error) {
+    console.error('AI experience generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate experience description with AI',
+      details: error.message
+    });
+  }
+});
+
+function createFallbackResume(summary, resumeName) {
+  const summaryLower = summary.toLowerCase();
+  
+  // Extract potential name
+  const nameMatch = summary.match(/(?:i am|my name is|i'm)\s+([a-zA-Z\s]+)/i);
+  const extractedName = nameMatch ? nameMatch[1].trim() : 'Professional User';
+  
+  // Determine field and skills based on resume name and summary
+  let field = 'Technology';
+  let jobTitle = 'Software Engineer';
+  let skills = ['JavaScript', 'React', 'Node.js', 'Python', 'Git', 'SQL'];
+  
+  if (summaryLower.includes('marketing') || summaryLower.includes('sales') || resumeName.toLowerCase().includes('marketing')) {
+    field = 'Marketing';
+    jobTitle = 'Marketing Specialist';
+    skills = ['Digital Marketing', 'SEO', 'Content Creation', 'Analytics', 'Social Media', 'Campaign Management'];
+  } else if (summaryLower.includes('design') || summaryLower.includes('creative') || resumeName.toLowerCase().includes('design')) {
+    field = 'Design';
+    jobTitle = 'UI/UX Designer';
+    skills = ['Figma', 'Photoshop', 'User Research', 'Wireframing', 'Prototyping', 'Adobe Creative Suite'];
+  } else if (summaryLower.includes('data') || summaryLower.includes('analyst') || resumeName.toLowerCase().includes('data')) {
+    field = 'Data Science';
+    jobTitle = 'Data Analyst';
+    skills = ['Python', 'SQL', 'Excel', 'Tableau', 'Power BI', 'Statistics'];
+  }
+
+  return {
+    personalInfo: {
+      fullName: extractedName,
+      email: `${extractedName.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+      phone: '+1 (555) 123-4567',
+      location: 'City, State',
+      summary: `Results-driven ${jobTitle} with proven expertise in ${field.toLowerCase()} and track record of delivering measurable business impact. Experienced in leading cross-functional teams and implementing scalable solutions that drive growth. Passionate about leveraging technology to solve complex problems and exceed organizational objectives.`
+    },
+    experiences: [{
+      id: '1',
+      jobTitle: `Senior ${jobTitle}`,
+      company: 'Tech Solutions Inc.',
+      location: 'City, State',
+      startDate: '2022-01',
+      endDate: '',
+      current: true,
+      description: `• Led team of 6+ professionals, resulting in 30% improvement in project delivery timelines\n• Implemented innovative solutions that increased efficiency by 25% and reduced operational costs\n• Managed $300K+ annual budget while maintaining 95% client satisfaction rate\n• Collaborated with senior leadership to align technical strategy with business objectives`
+    }],
+    education: [{
+      id: '1',
+      degree: `Bachelor of Science in ${field}`,
+      school: 'State University',
+      location: 'City, State',
+      graduationDate: '2020-05',
+      gpa: '3.7'
+    }],
+    skills: skills.map((skill, index) => ({
+      id: (index + 1).toString(),
+      name: skill,
+      level: index < 3 ? 'advanced' : 'intermediate'
+    }))
+  };
+}
 
 // Get all resumes
 app.get('/api/resumes', ensureDBConnection, async (req, res) => {
@@ -81,8 +453,8 @@ app.get('/api/resumes', ensureDBConnection, async (req, res) => {
     // Transform resumes to include proper title and id
     const transformedResumes = resumes.map(resume => ({
       ...resume,
-      id: resume._id.toString(),
-      title: resume.title || `${resume.personalInfo?.firstName || 'Untitled'} ${resume.personalInfo?.lastName || ''} Resume`.trim(),
+      id: resume._id ? resume._id.toString() : resume.id,
+      title: resume.title || `${resume.personalInfo?.firstName || resume.personalInfo?.fullName || 'Untitled'} Resume`.trim(),
       _id: undefined
     }));
     
@@ -105,10 +477,10 @@ app.post('/api/resumes', ensureDBConnection, async (req, res) => {
     };
 
     // Validate required fields
-    if (!resume.personalInfo || (!resume.personalInfo.firstName && !resume.title)) {
+    if (!resume.personalInfo || (!resume.personalInfo.firstName && !resume.personalInfo.fullName && !resume.title)) {
       return res.status(400).json({ 
         error: 'Missing required fields', 
-        message: 'Resume must have either a title or personal info with firstName' 
+        message: 'Resume must have either a title or personal info with name' 
       });
     }
 
@@ -144,9 +516,8 @@ app.put('/api/resumes/:id', ensureDBConnection, async (req, res) => {
     const { id } = req.params;
     console.log(`Updating resume with ID: ${id}`);
     
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid resume ID format' });
-    }
+    const processedId = processResumeId(id);
+    console.log('Processed ID:', processedId);
     
     const updateData = {
       ...req.body,
@@ -156,22 +527,45 @@ app.put('/api/resumes/:id', ensureDBConnection, async (req, res) => {
     // Remove the id field from updateData to avoid conflicts
     delete updateData.id;
 
-    const result = await db.collection('resumes').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateData }
-    );
+    let result;
+    let updatedResume;
 
-    if (result.matchedCount === 0) {
+    if (processedId.isObjectId) {
+      console.log('Attempting ObjectId-based update');
+      // Try ObjectId-based update first
+      result = await db.collection('resumes').updateOne(
+        { _id: processedId.id },
+        { $set: updateData }
+      );
+      
+      if (result.matchedCount > 0) {
+        updatedResume = await db.collection('resumes').findOne({ _id: processedId.id });
+      }
+    }
+    
+    // If ObjectId didn't work or it's a string ID, try string-based query
+    if (!result || result.matchedCount === 0) {
+      console.log('Attempting string-based update with id field');
+      result = await db.collection('resumes').updateOne(
+        { id: processedId.stringId },
+        { $set: updateData }
+      );
+      
+      if (result.matchedCount > 0) {
+        updatedResume = await db.collection('resumes').findOne({ id: processedId.stringId });
+      }
+    }
+
+    if (!result || result.matchedCount === 0) {
+      console.log('Resume not found with either method');
       return res.status(404).json({ error: 'Resume not found' });
     }
 
-    const updatedResume = await db.collection('resumes').findOne({ _id: new ObjectId(id) });
-    
     console.log('Resume updated successfully');
     
     const responseResume = {
       ...updatedResume,
-      id: updatedResume._id.toString(),
+      id: updatedResume._id ? updatedResume._id.toString() : updatedResume.id,
       _id: undefined
     };
     
@@ -194,14 +588,22 @@ app.put('/api/resumes/:id', ensureDBConnection, async (req, res) => {
 app.delete('/api/resumes/:id', ensureDBConnection, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Deleting resume with ID: ${id}`);
     
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid resume ID format' });
+    const processedId = processResumeId(id);
+    let result;
+
+    if (processedId.isObjectId) {
+      // Try ObjectId-based deletion first
+      result = await db.collection('resumes').deleteOne({ _id: processedId.id });
     }
     
-    const result = await db.collection('resumes').deleteOne({ _id: new ObjectId(id) });
+    // If ObjectId didn't work or it's a string ID, try string-based query
+    if (!result || result.deletedCount === 0) {
+      result = await db.collection('resumes').deleteOne({ id: processedId.stringId });
+    }
 
-    if (result.deletedCount === 0) {
+    if (!result || result.deletedCount === 0) {
       return res.status(404).json({ error: 'Resume not found' });
     }
 
@@ -247,7 +649,9 @@ app.post('/api/applications', ensureDBConnection, async (req, res) => {
     const application = {
       ...req.body,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      // Ensure resume information is properly stored
+      resumeUsed: req.body.resumeUsed || null
     };
 
     const result = await db.collection('applications').insertOne(application);
@@ -276,7 +680,7 @@ app.post('/api/applications', ensureDBConnection, async (req, res) => {
   }
 });
 
-// Generate cover letter with enhanced AI-like generation
+// Generate cover letter with enhanced AI generation
 app.post('/api/generate-cover-letter', ensureDBConnection, async (req, res) => {
   try {
     const { company, position, description, location, salary, resumeId } = req.body;
@@ -290,32 +694,80 @@ app.post('/api/generate-cover-letter', ensureDBConnection, async (req, res) => {
     // Get resume data from database
     let resumeData = null;
     try {
-      if (ObjectId.isValid(resumeId)) {
-        resumeData = await db.collection('resumes').findOne({ _id: new ObjectId(resumeId) });
-      } else {
-        // Try to find by string ID
-        resumeData = await db.collection('resumes').findOne({ id: resumeId });
+      const processedId = processResumeId(resumeId);
+      
+      if (processedId.isObjectId) {
+        resumeData = await db.collection('resumes').findOne({ _id: processedId.id });
       }
+      
+      if (!resumeData) {
+        resumeData = await db.collection('resumes').findOne({ id: processedId.stringId });
+      }
+      
       console.log('Resume data found:', resumeData ? 'Yes' : 'No');
     } catch (error) {
       console.log('Could not fetch resume from DB:', error.message);
     }
 
-    // Generate personalized cover letter
-    const coverLetter = generatePersonalizedCoverLetter({
-      company,
-      position,
-      description,
-      location,
-      salary,
-      resumeData
-    });
-    
-    res.json({ 
-      success: true,
-      coverLetter,
-      message: 'Cover letter generated successfully'
-    });
+    // Generate AI-powered cover letter
+    const prompt = `You are a professional cover letter writer with expertise in creating compelling, personalized cover letters that get results.
+
+WRITE A PROFESSIONAL COVER LETTER FOR:
+- Company: ${company}
+- Position: ${position}
+- Job Description: ${description || 'Not provided'}
+- Location: ${location || 'Not specified'}
+- Salary: ${salary || 'Not specified'}
+
+CANDIDATE INFORMATION:
+${resumeData ? `
+- Name: ${resumeData.personalInfo?.fullName || 'Candidate'}
+- Email: ${resumeData.personalInfo?.email || 'email@example.com'}
+- Phone: ${resumeData.personalInfo?.phone || 'phone number'}
+- Current Role: ${resumeData.experiences?.[0]?.jobTitle || 'Professional'}
+- Skills: ${resumeData.skills?.map(s => s.name).join(', ') || 'Relevant skills'}
+- Summary: ${resumeData.personalInfo?.summary || 'Experienced professional'}
+` : 'Limited candidate information available'}
+
+REQUIREMENTS:
+- Professional business letter format with proper header and closing
+- Compelling opening that immediately captures attention
+- 2-3 body paragraphs highlighting relevant experience and achievements
+- Specific examples of how candidate's skills match the role requirements
+- Professional yet personable tone that shows genuine interest
+- Strong closing with clear call-to-action
+- Include quantifiable achievements where possible
+- Tailor content specifically to the company and position
+- Keep total length between 250-400 words
+
+FORMAT: Return complete cover letter with proper business formatting including date, addresses, salutation, body paragraphs, and professional closing.`;
+
+    try {
+      const generatedCoverLetter = await callGeminiAPI(prompt);
+      res.json({ 
+        success: true,
+        coverLetter: generatedCoverLetter,
+        message: 'AI-powered cover letter generated successfully'
+      });
+    } catch (error) {
+      console.error('AI cover letter generation failed:', error);
+      
+      // Enhanced fallback cover letter generation
+      const fallbackCoverLetter = generatePersonalizedCoverLetter({
+        company,
+        position,
+        description,
+        location,
+        salary,
+        resumeData
+      });
+      
+      res.json({ 
+        success: true,
+        coverLetter: fallbackCoverLetter,
+        message: 'Cover letter generated successfully'
+      });
+    }
   } catch (error) {
     console.error('Error generating cover letter:', error);
     res.status(500).json({ 
@@ -335,7 +787,7 @@ function generatePersonalizedCoverLetter({ company, position, description, locat
   
   // Extract data from resume
   const candidateName = resumeData 
-    ? `${resumeData.personalInfo?.firstName || ''} ${resumeData.personalInfo?.lastName || ''}`.trim()
+    ? `${resumeData.personalInfo?.firstName || resumeData.personalInfo?.fullName || ''} ${resumeData.personalInfo?.lastName || ''}`.trim()
     : '[Your Name]';
   
   const candidateEmail = resumeData?.personalInfo?.email || '[Your Email]';
@@ -344,7 +796,7 @@ function generatePersonalizedCoverLetter({ company, position, description, locat
   
   // Extract skills and experience
   const skills = resumeData?.skills?.slice(0, 5).map(skill => skill.name).join(', ') || 'relevant technical skills';
-  const topExperience = resumeData?.experience?.[0] || null;
+  const topExperience = resumeData?.experience?.[0] || resumeData?.experiences?.[0] || null;
   const education = resumeData?.education?.[0] || null;
   const projects = resumeData?.projects?.slice(0, 2) || [];
   
@@ -352,13 +804,13 @@ function generatePersonalizedCoverLetter({ company, position, description, locat
   let experienceText = '';
   if (topExperience) {
     const duration = topExperience.current ? 'Currently' : `From ${topExperience.startDate} to ${topExperience.endDate || 'present'}`;
-    experienceText = `In my role as ${topExperience.position} at ${topExperience.company}, I have ${topExperience.description?.substring(0, 150) || 'gained valuable experience in the field'}.`;
+    experienceText = `In my role as ${topExperience.position || topExperience.jobTitle} at ${topExperience.company}, I have ${topExperience.description?.substring(0, 150) || 'gained valuable experience in the field'}.`;
   }
   
   // Build education paragraph
   let educationText = '';
   if (education) {
-    educationText = `I hold a ${education.degree} in ${education.field} from ${education.institution}${education.gpa ? ` with a GPA of ${education.gpa}` : ''}.`;
+    educationText = `I hold a ${education.degree} in ${education.field} from ${education.institution || education.school}${education.gpa ? ` with a GPA of ${education.gpa}` : ''}.`;
   }
   
   // Build projects paragraph
