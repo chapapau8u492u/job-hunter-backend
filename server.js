@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 // MongoDB connection
 let db;
 let mongoClient;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chapapau8u492u:chapapau8u492u@cluster0studentos.23ubx9r.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0StudentOS';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chapapau8u492u:chapapau8u492u@job-hunter.nh5pqhk.mongodb.net/?retryWrites=true&w=majority&appName=Job-HunterS';
 
 // Gemini API configuration
 const GEMINI_API_KEY = 'AIzaSyBmE7h85j2gCHUuqtkofhZcjtRYwN-8O78';
@@ -20,7 +20,6 @@ async function connectToMongoDB() {
   try {
     console.log('Attempting to connect to MongoDB...');
     mongoClient = new MongoClient(MONGODB_URI, {
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
@@ -53,7 +52,8 @@ app.use(cors({
     'http://127.0.0.1:5173',
     'https://preview--application-ace-platform.lovable.app',
     /\.lovableproject\.com$/,
-    /\.lovable\.app$/
+    /\.lovable\.app$/,
+    `https://preview--career-growth-orchestrator-85.lovable.app/`
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
