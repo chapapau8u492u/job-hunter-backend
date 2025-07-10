@@ -53,8 +53,8 @@ app.use(cors({
     'https://preview--application-ace-platform.lovable.app',
     /\.lovableproject\.com$/,
     /\.lovable\.app$/,
-    `https://preview--career-growth-orchestrator-85.lovable.app/,
-    https://student-os-zeta.vercel.app`
+    `https://preview--career-growth-orchestrator-85.lovable.app/`,
+    `https://student-os-zeta.vercel.app`
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
