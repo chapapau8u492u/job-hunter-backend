@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 // MongoDB connection
 let db;
 let mongoClient;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chapapau8u492u:chapapau8u492u@job-hunter.nh5pqhk.mongodb.net/?retryWrites=true&w=majority&appName=Job-HunterS';
+const MONGODB_URI = 'mongodb+srv://trylaptop2024:trylaptop2024@cluster0.q8qtgtu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 // Gemini API configuration
 const GEMINI_API_KEY = 'AIzaSyBmE7h85j2gCHUuqtkofhZcjtRYwN-8O78';
@@ -923,3 +923,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
