@@ -54,7 +54,8 @@ app.use(cors({
     /\.lovableproject\.com$/,
     /\.lovable\.app$/,
     `https://preview--career-growth-orchestrator-85.lovable.app/`,
-    `https://student-os-zeta.vercel.app`
+    `https://student-os-zeta.vercel.app`,
+    *
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Origin', 'Authorization'],
@@ -923,5 +924,6 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
 
 
